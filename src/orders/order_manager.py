@@ -37,14 +37,13 @@ class OrderManager:
 
         # Filtros y mínimos del símbolo (para normalizar la cantidad base antes de convertir)
         filters = self.client.get_symbol_filters(self.symbol, category=self.category)
-        lot = filters.get("lotSizeFilter", {}) if isinstance(filters, dict) else {}
-
+        
         try:
-            min_qty = float(lot.get("minOrderQty") or 0)
+            min_qty = filters.get("min_qty", 0.0) if isinstance(filters, dict) else 0.0
         except Exception:
             min_qty = 0.0
         try:
-            qty_step = float(lot.get("qtyStep") or 0)
+            qty_step = filters.get("qty_step", 0.0) if isinstance(filters, dict) else 0.0
         except Exception:
             qty_step = 0.0
 

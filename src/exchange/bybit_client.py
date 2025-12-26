@@ -92,6 +92,7 @@ class BybitClient:
                 "qty_step": float(lot_size.get("qtyStep", 0)),
                 "min_qty": float(lot_size.get("minOrderQty", 0)),
                 "max_qty": float(lot_size.get("maxOrderQty", 0)),
+                "min_notional": float(lot_size.get("minOrderAmt", 0)), # Agregado para soportar validación de monto mínimo
                 "price_tick": float(price_filter.get("tickSize", 0)),
                 "min_price": float(price_filter.get("minPrice", 0)),
                 "max_price": float(price_filter.get("maxPrice", 0)),
@@ -99,6 +100,16 @@ class BybitClient:
         except Exception as e:
             logger.error(f"Excepción obteniendo filtros: {e}")
             return None
+
+    def get_min_order_value(self, symbol, category="spot"):
+        """
+        Obtiene el valor mínimo de orden (minNotional o minOrderAmt) para el símbolo.
+        Útil para validar compras Market en USDT.
+        """
+        filters = self.get_symbol_filters(symbol, category)
+        if filters:
+            return filters.get("min_notional", 0.0)
+        return 0.0
 
     def place_order(self, category, symbol, side, order_type, qty=None, price=None, time_in_force="GTC", stop_loss=None, take_profit=None, **kwargs):
         try:
