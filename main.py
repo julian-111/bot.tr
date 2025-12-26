@@ -5,13 +5,19 @@ from src.market_data.stream import MarketDataStreamer
 from src.orders.order_manager import OrderManager
 from src.strategy.scalping_simple import ScalpingStrategy
 import logging
+import time
+
 def main():
     settings = load_settings()
     logger = setup_logger("Main", settings["log_level"])
-    # Silenciar todo logging (console) de librerías/módulos; usaremos prints mínimos
-    logging.disable(logging.CRITICAL)
+    
+    # Reactivar logging para ver errores reales
+    logging.disable(logging.NOTSET)
 
-    # Initialize client (primer intento con settings actuales)
+    logger.info(f"Iniciando bot en modo: {settings['env']}")
+    logger.info(f"Endpoint: {settings['rest_endpoint']}")
+
+    # Initialize client
     client = BybitClient(
         api_key=settings["api_key"],
         api_secret=settings["api_secret"],
@@ -21,29 +27,20 @@ def main():
         is_demo=settings["is_demo"],
     )
 
-    # Validar conexión: si falla, hacer fallback a TESTNET
+    # Validar conexión ESTRICTA
     try:
-        balances = client.get_wallet_balance(coins=["USDT", "BTC"])
-        # Print mínimo de conexión OK (sin detalles)
-        print("✅ API conectada")
+        logger.info("Probando conexión a API...")
+        balances = client.get_wallet_balance(coins=["USDT"])
+        logger.info(f"✅ Conexión exitosa. Balance USDT: {balances.get('USDT', 0)}")
     except Exception as e:
-        print("❌ API fallo; usando TESTNET")
-        logger.error(f"No se pudo validar balance (continuaré con datos de mercado): {e}")
-        if settings.get("is_demo", False):
-            logger.warning("Fallo en DEMO. Cambiando a TESTNET por estabilidad...")
-            client = BybitClient(
-                api_key=settings["api_key"],
-                api_secret=settings["api_secret"],
-                rest_endpoint="https://api-testnet.bybit.com",
-                account_type=settings["account_type"],
-                is_testnet=True,
-                is_demo=False,
-            )
+        logger.error(f"❌ ERROR CRÍTICO DE CONEXIÓN: {e}")
+        logger.error("Verifica tus API KEYS en el archivo .env y que correspondan a TESTNET/MAINNET")
+        logger.error("El bot se detendrá para evitar errores en bucle.")
+        time.sleep(5) # Dar tiempo a leer el log
+        return # Salir limpiamente
 
     streamer = MarketDataStreamer(client, settings["symbol"], settings["category"])
     order_manager = OrderManager(client, settings["symbol"], settings["category"])
-
-    # Ejecutar estrategia mínima
 
     from src import config as cfg
     strat = ScalpingStrategy(
@@ -56,7 +53,8 @@ def main():
         max_open_minutes=getattr(cfg, "MAX_OPEN_MINUTES", 20),
         logger=logger,
     )
-    print("Servicio en ejecución. Presiona Ctrl+C para salir.")
+    
+    logger.info("🚀 Estrategia iniciada. Presiona Ctrl+C para detener.")
     strat.run()
 
 if __name__ == "__main__":

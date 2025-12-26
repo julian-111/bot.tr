@@ -1,8 +1,10 @@
 import os
 from dotenv import load_dotenv
 
+# Cargar variables de entorno desde .env
+load_dotenv()
+
 def load_settings():
-    load_dotenv()
     env = os.getenv("BYBIT_ENV", "DEMO").strip().strip('"').strip("'").upper()
     is_demo = env == "DEMO"
     is_testnet = env == "TESTNET"
@@ -19,8 +21,8 @@ def load_settings():
         "env": env,
         "is_demo": is_demo,
         "is_testnet": is_testnet,
+        "is_prod": is_prod,
         "buy_usdt_amount": buy_usdt_amount,
-        # Endpoints según entorno
         "rest_endpoint": (
             "https://api-demo.bybit.com" if is_demo else (
                 "https://api-testnet.bybit.com" if is_testnet else "https://api.bybit.com"
@@ -32,17 +34,19 @@ def load_settings():
             )
         ),
     }
-    if not settings["api_key"] or not settings["api_secret"]:
-        raise ValueError("Missing BYBIT_API_KEY or BYBIT_API_SECRET in .env")
-    if len(settings["api_key"]) < 16 or len(settings["api_secret"]) < 30:
-        print(
-            f"WARNING: Unusual BYBIT_API_KEY/BYBIT_API_SECRET lengths: "
-            f"{len(settings['api_key'])}/{len(settings['api_secret'])}. "
-            f"Verifica que sean del entorno correcto."
-        )
     return settings
 
-# Config esencial
-SYMBOL = os.getenv("SYMBOL", "BTCUSDT")
-CATEGORY = os.getenv("CATEGORY", "spot")
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+# Cargar configuración globalmente
+SETTINGS = load_settings()
+
+# EXPORTAR VARIABLES PARA IMPORTACIÓN DIRECTA
+BYBIT_API_KEY = SETTINGS["api_key"]
+BYBIT_API_SECRET = SETTINGS["api_secret"]
+BYBIT_ENV = SETTINGS["env"]
+BYBIT_TESTNET = SETTINGS["is_testnet"]
+BYBIT_DEMO = SETTINGS["is_demo"]
+BYBIT_PROD = SETTINGS["is_prod"]
+SYMBOL = SETTINGS["symbol"]
+CATEGORY = SETTINGS["category"]
+LOG_LEVEL = SETTINGS["log_level"]
+BUY_USDT_AMOUNT = SETTINGS["buy_usdt_amount"]

@@ -48,14 +48,11 @@ def setup_trade_logger(name: str = "Trades"):
 
     # Asegurar que el archivo exista
     trade_log_path = "logs/trades.log"
-    try:
-        with open(trade_log_path, "a"):
-            pass
-    except Exception:
-        os.makedirs("logs", exist_ok=True)
-
-    fh = RotatingFileHandler(trade_log_path, maxBytes=1_000_000, backupCount=5)
+    fh = RotatingFileHandler(trade_log_path, maxBytes=5_000_000, backupCount=5)
     fh.setFormatter(fmt)
     logger.addHandler(fh)
 
     return logger
+
+# INSTANCIA GLOBAL (para que 'from src.logger import logger' funcione)
+logger = setup_logger("Global")
