@@ -1,5 +1,4 @@
 from pybit.unified_trading import HTTP
-from src.config import BYBIT_API_KEY, BYBIT_API_SECRET, BYBIT_TESTNET, BYBIT_DEMO
 from src.logger import logger
 
 class BybitClient:
