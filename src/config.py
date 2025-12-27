@@ -35,18 +35,3 @@ def load_settings():
         ),
     }
     return settings
-
-# Cargar configuración globalmente
-SETTINGS = load_settings()
-
-# EXPORTAR VARIABLES PARA IMPORTACIÓN DIRECTA
-BYBIT_API_KEY = SETTINGS["api_key"]
-BYBIT_API_SECRET = SETTINGS["api_secret"]
-BYBIT_ENV = SETTINGS["env"]
-BYBIT_TESTNET = SETTINGS["is_testnet"]
-BYBIT_DEMO = SETTINGS["is_demo"]
-BYBIT_PROD = SETTINGS["is_prod"]
-SYMBOL = SETTINGS["symbol"]
-CATEGORY = SETTINGS["category"]
-LOG_LEVEL = SETTINGS["log_level"]
-BUY_USDT_AMOUNT = SETTINGS["buy_usdt_amount"]

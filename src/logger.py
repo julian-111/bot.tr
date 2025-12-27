@@ -3,6 +3,25 @@ import os
 from logging.handlers import RotatingFileHandler
 
 def setup_logger(name: str, level: str = "INFO"):
+    # --- Bloque para borrar logs antiguos ---
+    log_dir = "logs"
+    bot_log_path = os.path.join(log_dir, "bot.log")
+    trades_log_path = os.path.join(log_dir, "trades.log")
+
+    # Solo el logger 'Global' (el primero en ser llamado) debe borrar los logs
+    if name == "Global":
+        if os.path.exists(bot_log_path):
+            try:
+                os.remove(bot_log_path)
+            except OSError:
+                pass
+        if os.path.exists(trades_log_path):
+            try:
+                os.remove(trades_log_path)
+            except OSError:
+                pass
+    # --- Fin del bloque ---
+
     logger = logging.getLogger(name)
     if logger.handlers:
         return logger  # prevent duplicate handlers in repeated calls

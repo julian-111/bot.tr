@@ -1,10 +1,12 @@
 import time
 from typing import Optional, List
+import pandas as pd
+import pandas_ta as ta
 from src.logger import setup_logger
 
 
 class ScalpingStrategy:
-    def __init__(self, streamer, order_manager, symbol: str, risk_usdt: float = 10.0, tp_pct: float = 0.003, sl_pct: float = 0.005, max_open_minutes: int = 20, logger=None):
+    def __init__(self, streamer, order_manager, symbol: str, risk_usdt: float = 10.0, tp_pct: float = 0.003, sl_pct: float = 0.005, max_open_minutes: int = 20, adx_threshold: float = 25.0, logger=None):
         self.streamer = streamer
         self.md = streamer
         self.om = order_manager
@@ -13,6 +15,7 @@ class ScalpingStrategy:
         self.tp_pct = float(tp_pct)
         self.sl_pct = float(sl_pct)
         self.max_open_secs = int(max_open_minutes) * 60
+        self.adx_threshold = float(adx_threshold)
         self.logger = logger if logger is not None else setup_logger("ScalpingStrategy")
         
         # Calcular y loguear Ratio Riesgo:Beneficio
@@ -21,28 +24,59 @@ class ScalpingStrategy:
         self.logger.info(f"   • Riesgo (SL): {self.sl_pct*100:.2f}%")
         self.logger.info(f"   • Beneficio (TP): {self.tp_pct*100:.2f}%")
         self.logger.info(f"   • Ratio R:R: 1:{rr_ratio:.1f} (Objetivo: 1:2)")
+        self.logger.info(f"   • Filtro ADX: > {self.adx_threshold}")
+
+        # Obtener y guardar el valor mínimo de la orden
+        self._min_order_value = self.om.get_min_order_value()
+        if self._min_order_value > 0:
+            self.logger.info(f"   • Mínimo de Orden: {self._min_order_value:.2f} USDT")
+        else:
+            self.logger.warning("   • No se pudo obtener el mínimo de orden. Se usará un valor por defecto.")
         
-        self._prices: List[float] = []
+        self._prices = pd.DataFrame(columns=['open', 'high', 'low', 'close'])
         self._in_trade = False
         self._entry = 0.0
         self._qty = 0.0
         self._opened_at = 0.0
+        self._last_fail_time = 0.0
 
-    def _ema(self, period: int) -> Optional[float]:
-        if len(self._prices) < period:
+    def _calculate_indicators(self):
+        if len(self._prices) < 25: # No calcular si no hay suficientes datos para ADX
             return None
-        k = 2 / (period + 1)
-        e = None
-        for v in self._prices[-period:]:
-            e = v if e is None else v * k + e * (1 - k)
-        return e
+        
+        # Usar una copia para evitar SettingWithCopyWarning
+        df = self._prices.copy()
 
-    def _should_buy(self) -> bool:
-        e9 = self._ema(9)
-        e21 = self._ema(21)
-        if e9 is None or e21 is None:
-            return False
-        return e9 > e21 and not self._in_trade
+        # Calcular EMA
+        df.ta.ema(length=9, append=True)
+        df.ta.ema(length=21, append=True)
+
+        # Calcular ADX
+        df.ta.adx(length=14, append=True) # ADX usa 14 periodos por defecto
+
+        return df.iloc[-1] # Devolver la última fila con los indicadores más recientes
+
+    def _should_buy(self, indicators) -> (bool, str):
+        if indicators is None or self._in_trade:
+            return False, ""
+
+        ema9 = indicators.get('EMA_9')
+        ema21 = indicators.get('EMA_21')
+        adx = indicators.get('ADX_14')
+
+        if ema9 is None or ema21 is None or adx is None:
+            return False, ""
+
+        # Condición de Cruce de Medias
+        buy_signal = ema9 > ema21
+
+        # Condición de Fortaleza de Tendencia
+        is_trending = adx > self.adx_threshold
+
+        if buy_signal and not is_trending:
+            return False, "lateral"
+        
+        return buy_signal and is_trending, "ok"
 
     def _should_close(self, price: float) -> Optional[str]:
         if not self._in_trade:
@@ -57,13 +91,29 @@ class ScalpingStrategy:
 
     def on_tick(self, price: float):
         try:
-            self._prices.append(float(price))
+            # Añadir el nuevo precio al DataFrame
+            new_row = pd.DataFrame([{'open': price, 'high': price, 'low': price, 'close': price}])
+            self._prices = pd.concat([self._prices, new_row], ignore_index=True)
+
+            # Mantener el DataFrame con un tamaño manejable
             if len(self._prices) > 1000:
-                self._prices = self._prices[-1000:]
-            if not self._in_trade and self._should_buy():
+                self._prices = self._prices.iloc[-1000:]
+
+            # Calcular indicadores
+            indicators = self._calculate_indicators()
+
+            # Decisión de Compra
+            should_buy, reason = self._should_buy(indicators)
+            if should_buy:
                 # Evitar reintentos inmediatos si falló recientemente
                 if time.time() - self._last_fail_time < 60:
                     return
+
+                # --- VALIDACIÓN DE MONTO MÍNIMO ---
+                if self.risk_usdt < self._min_order_value:
+                    self.logger.debug(f"Intento de compra omitido. Riesgo ({self.risk_usdt} USDT) es menor al mínimo requerido ({self._min_order_value} USDT).")
+                    return
+                # --- FIN DE VALIDACIÓN ---
 
                 order = self.om.market_buy_usdt(self.risk_usdt)
                 
@@ -95,9 +145,14 @@ class ScalpingStrategy:
                 self.logger.info(f"   • Total:    ${(lp * qty):,.2f}")
                 self.logger.info("==========================================")
                 return
+            
+            elif reason == "lateral":
+                adx_value = indicators.get('ADX_14', 0)
+                self.logger.debug(f"Mercado lateral detectado (ADX: {adx_value:.2f}). Esperando más volatilidad para operar.")
 
-            reason = self._should_close(float(price))
-            if reason:
+            # Decisión de Cierre
+            close_reason = self._should_close(float(price))
+            if close_reason:
                 qty_str = f"{self._qty:.6f}"
                 self.om.market_sell(qty_str)
                 
@@ -110,7 +165,7 @@ class ScalpingStrategy:
                 self.logger.info(f"💰 VENTA EJECUTADA ({reason.upper()})")
                 self.logger.info(f"   • Precio Venta: ${float(price):,.2f}")
                 self.logger.info(f"   • Precio Entr.: ${self._entry:,.2f}")
-                self.logger.info(f"   • Resultado:    {result_text} ${total_pnl:,.2f}")
+                self.logger.info(f"   • Resultado:    {result_text} | PnL: {total_pnl:+.2f} USDT")
                 self.logger.info("==========================================")
 
                 self._in_trade = False

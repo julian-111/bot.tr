@@ -12,6 +12,15 @@ class OrderManager:
         self.symbol = symbol
         self.category = category
 
+    def get_min_order_value(self) -> float:
+        """Devuelve el valor mínimo de la orden (minNotional) para el símbolo actual."""
+        try:
+            min_val = self.client.get_min_order_value(self.symbol, self.category)
+            return float(min_val) if min_val is not None else 0.0
+        except Exception as e:
+            self.logger.error(f"No se pudo obtener el valor mínimo de la orden: {e}")
+            return 0.0
+
     def market_buy(self, qty: str, order_link_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Recibe cantidad en BASE asset (BTC).
@@ -78,8 +87,10 @@ class OrderManager:
                  min_notional = 1.0
 
             if usdt_amount < min_notional:
-                self.logger.warning(f"Monto {usdt_amount} < MinNotional {min_notional}. Ajustando a {min_notional}.")
-                usdt_amount = min_notional
+                # Ya no se ajusta automáticamente. La estrategia es responsable de validar.
+                # Devolver un error claro si se intenta una orden por debajo del mínimo.
+                self.logger.error(f"El monto de la orden {usdt_amount} USDT es menor que el mínimo requerido de {min_notional} USDT.")
+                return {"retCode": 10001, "retMsg": "Order amount is below the minimum required.", "result": {}}
 
             # Formatear a 4 decimales para USDT
             qty_str = f"{usdt_amount:.4f}"

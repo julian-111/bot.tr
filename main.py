@@ -42,15 +42,15 @@ def main():
     streamer = MarketDataStreamer(client, settings["symbol"], settings["category"])
     order_manager = OrderManager(client, settings["symbol"], settings["category"])
 
-    from src import config as cfg
     strat = ScalpingStrategy(
         streamer=streamer,
         order_manager=order_manager,
         symbol=settings["symbol"],
-        risk_usdt=getattr(cfg, "RISK_PER_TRADE_USDT", 10.0),
-        tp_pct=getattr(cfg, "TP_PCT", 0.003),
-        sl_pct=getattr(cfg, "SL_PCT", 0.005),
-        max_open_minutes=getattr(cfg, "MAX_OPEN_MINUTES", 20),
+        risk_usdt=settings.get("risk_per_trade_usdt", 10.0),
+        tp_pct=settings.get("tp_pct", 0.003),
+        sl_pct=settings.get("sl_pct", 0.005),
+        max_open_minutes=settings.get("max_open_minutes", 20),
+        adx_threshold=settings.get("adx_threshold", 25.0),
         logger=logger,
     )
     

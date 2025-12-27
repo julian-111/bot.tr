@@ -133,10 +133,17 @@ class BybitClient:
             order_params.update(kwargs)
 
             logger.info(f"Enviando orden: {order_params}")
-            return self.http.place_order(**order_params)
+            response = self.http.place_order(**order_params)
+
+            # Si hay un error en la respuesta de la API, lo registramos de forma clara
+            if response.get('retCode') != 0:
+                logger.error(f"Error de API al enviar orden: {response.get('retMsg')} (retCode: {response.get('retCode')})")
+            
+            return response
         except Exception as e:
-            logger.error(f"Error al enviar orden: {e}")
-            raise
+            logger.error(f"Excepción al enviar orden: {e}")
+            # Devolvemos un diccionario con el error para un manejo consistente
+            return {"retCode": -1, "retMsg": str(e)}
 
     def get_executions(self, symbol: str, category: str = "spot", orderId: str = None, limit: int = 50):
         try:
