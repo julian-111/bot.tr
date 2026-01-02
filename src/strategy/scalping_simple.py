@@ -164,11 +164,11 @@ class ScalpingStrategy:
             
             elif reason == "lateral":
                 adx_value = indicators.get('ADX_14', 0)
-                self.logger.debug(f"Mercado lateral detectado (ADX: {adx_value:.2f}). Esperando más volatilidad para operar.")
+                self.logger.info(f"Mercado lateral detectado (ADX: {adx_value:.2f}). Esperando más volatilidad para operar.")
             
             elif reason == "rsi_overbought":
                 rsi_value = indicators.get('RSI_14', 0)
-                self.logger.debug(f"Compra rechazada por sobrecompra (RSI: {rsi_value:.2f} >= {self.rsi_threshold}). Evitando entrada de alto riesgo.")
+                self.logger.info(f"Compra rechazada por sobrecompra (RSI: {rsi_value:.2f} >= {self.rsi_threshold}). Evitando entrada de alto riesgo.")
 
             # Decisión de Cierre
             close_reason = self._should_close(float(price))
