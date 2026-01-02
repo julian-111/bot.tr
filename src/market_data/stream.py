@@ -47,25 +47,24 @@ class MarketDataStreamer:
         self._last_tick_ts: float = 0.0
         self._watchdog_thread: Optional[threading.Thread] = None
 
-    def start(self, on_tick: Optional[Callable[[float], None]] = None):
+    def start(self, on_kline: Optional[Callable[[Dict], None]] = None):
         if getattr(self.client, "is_demo", False):
-            self.logger.info("Demo mode: using REST polling for tickers.")
-            self._start_rest_polling(on_tick)
+            self.logger.info("Demo mode: using REST polling for klines.")
+            self._start_rest_polling(on_kline)
             return
         
         try:
-            self.logger.info("Attempting WebSocket subscription for real-time tickers...")
+            self.logger.info("Attempting WebSocket subscription for real-time klines (1-minute)...")
             self._ws = WebSocket(
                 testnet=getattr(self.client, "is_testnet", True),
                 channel_type="spot",
-                ping_interval=30,  # Aumentado para evitar timeouts
+                ping_interval=30,
                 ping_timeout=10,
-                restart_on_error=True  # Auto-reinicio
+                restart_on_error=True
             )
             
             def cb(msg):
                 try:
-                    # Detectar recuperación de conexión
                     global _is_ws_down
                     if _is_ws_down:
                         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -73,90 +72,94 @@ class MarketDataStreamer:
                         _is_ws_down = False
 
                     if self._debug_messages < 5:
-                        self.logger.info(f"WS message: {msg}")
+                        self.logger.info(f"WS kline message: {msg}")
                         self._debug_messages += 1
-                    data = msg.get("data")
                     
-                    price_str = None
+                    data = msg.get("data")
                     if isinstance(data, list) and data:
-                        price_str = (
-                            data[0].get("lastPrice")
-                            or data[0].get("lp")
-                            or data[0].get("last_price")
-                            or data[0].get("price")
-                        )
-                    elif isinstance(data, dict):
-                        price_str = (
-                            data.get("lastPrice")
-                            or data.get("lp")
-                            or data.get("last_price")
-                            or data.get("price")
-                        )
-
-                    if price_str:
-                        price = float(price_str)
-                        self._last_price = price
-                        self._last_tick_ts = time.time()
-                        if on_tick:
-                            on_tick(price)
-                            
+                        kline_data = data[0]
+                        # Solo procesar velas confirmadas
+                        if kline_data.get('confirm', False):
+                            kline = {
+                                'timestamp': int(kline_data['start']),
+                                'open': float(kline_data['open']),
+                                'high': float(kline_data['high']),
+                                'low': float(kline_data['low']),
+                                'close': float(kline_data['close']),
+                                'volume': float(kline_data['volume']),
+                            }
+                            self._last_price = kline['close']
+                            self._last_tick_ts = time.time()
+                            if on_kline:
+                                on_kline(kline)
+                                
                 except Exception as e:
-                    self.logger.error(f"Error parsing WS message: {e}")
+                    self.logger.error(f"Error parsing WS kline message: {e}")
 
-            self._ws.ticker_stream(symbol=self.symbol, callback=cb)
-            self.logger.info("WebSocket ticker stream started.")
+            self._ws.kline_stream(interval=1, symbol=self.symbol, callback=cb)
+            self.logger.info("WebSocket kline stream started.")
             
-            # Watchdog para asegurar que si el WS muere, el REST tome el control
             if self._watchdog_thread is None or not self._watchdog_thread.is_alive():
-                self._watchdog_thread = threading.Thread(target=self._watchdog_loop, args=(on_tick,), daemon=True)
+                self._watchdog_thread = threading.Thread(target=self._watchdog_loop, args=(on_kline,), daemon=True)
                 self._watchdog_thread.start()
                 
         except Exception as e:
-            self.logger.warning(f"WebSocket failed ({e}); falling back to REST polling.")
-            self._start_rest_polling(on_tick)
+            self.logger.warning(f"WebSocket failed ({e}); falling back to REST polling for klines.")
+            self._start_rest_polling(on_kline)
 
-    def _start_rest_polling(self, on_tick: Optional[Callable[[float], None]]):
+    def _start_rest_polling(self, on_kline: Optional[Callable[[Dict], None]]):
         if self._thread and self._thread.is_alive():
             return
-        self._thread = threading.Thread(target=self._poll_loop, args=(on_tick,), daemon=True)
+        self._thread = threading.Thread(target=self._poll_loop, args=(on_kline,), daemon=True)
         self._thread.start()
 
-    def _watchdog_loop(self, on_tick: Optional[Callable[[float], None]]):
-        stale_secs = 20.0  # Tolerancia aumentada
+    def _watchdog_loop(self, on_kline: Optional[Callable[[Dict], None]]):
+        stale_secs = 70.0 # 1 minuto + 10s de margen
         while not self._stop.is_set():
             try:
-                time.sleep(5)
-                # Si estamos usando WS pero no llegan datos hace rato
+                time.sleep(10)
                 if self._ws and (time.time() - self._last_tick_ts) > stale_secs and self._last_tick_ts > 0:
-                    self.logger.warning("WS sin actividad reciente. Cambiando a REST Polling.")
+                    self.logger.warning("WS kline stream sin actividad. Cambiando a REST Polling.")
                     try:
                         self._ws.exit()
                     except Exception:
                         pass
                     self._ws = None
-                    self._start_rest_polling(on_tick)
-                    break # Salir del watchdog ya que el REST tiene su propio loop
+                    self._start_rest_polling(on_kline)
+                    break
             except Exception as e:
                 self.logger.error(f"Watchdog error: {e}")
                 time.sleep(5)
 
-    def _poll_loop(self, on_tick: Optional[Callable[[float], None]]):
-        self.logger.info("Iniciando REST polling loop...")
+    def _poll_loop(self, on_kline: Optional[Callable[[Dict], None]]):
+        self.logger.info("Iniciando REST polling loop para klines...")
+        last_kline_ts = 0
         while not self._stop.is_set():
             try:
-                ticker = self.client.get_ticker(symbol=self.symbol, category=self.category)
-                if ticker:
-                    price_str = ticker.get("lastPrice") or ticker.get("lp") or ticker.get("price")
-                    if price_str:
-                        price = float(price_str)
-                        self._last_price = price
+                klines = self.client.get_klines(symbol=self.symbol, category=self.category, interval=1, limit=2)
+                if klines and klines['list']:
+                    latest_kline_raw = klines['list'][0]
+                    kline_ts = int(latest_kline_raw[0])
+                    
+                    # Si es una vela nueva, procesarla
+                    if kline_ts > last_kline_ts:
+                        last_kline_ts = kline_ts
+                        kline = {
+                            'timestamp': kline_ts,
+                            'open': float(latest_kline_raw[1]),
+                            'high': float(latest_kline_raw[2]),
+                            'low': float(latest_kline_raw[3]),
+                            'close': float(latest_kline_raw[4]),
+                            'volume': float(latest_kline_raw[5]),
+                        }
+                        self._last_price = kline['close']
                         self._last_tick_ts = time.time()
-                        if on_tick:
-                            on_tick(price)
+                        if on_kline:
+                            on_kline(kline)
             except Exception as e:
-                self.logger.error(f"Error en REST polling: {e}")
+                self.logger.error(f"Error en REST polling de klines: {e}")
             
-            time.sleep(3) # Polling cada 3 segundos para no saturar
+            time.sleep(30) # Polling cada 30 segundos, ya que las velas son de 1 min
 
     def stop(self):
         self._stop.set()

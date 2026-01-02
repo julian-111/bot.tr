@@ -3,6 +3,7 @@ from src.logger import setup_logger
 from src.exchange.bybit_client import BybitClient
 from src.market_data.stream import MarketDataStreamer
 from src.orders.order_manager import OrderManager
+from src.utils.trade_logger import TradeLogger
 from src.strategy.scalping_simple import ScalpingStrategy
 import logging
 import time
@@ -10,6 +11,7 @@ import time
 def main():
     settings = load_settings()
     logger = setup_logger("Main", settings["log_level"])
+    trade_logger = TradeLogger()
     
     # Reactivar logging para ver errores reales
     logging.disable(logging.NOTSET)
@@ -52,7 +54,11 @@ def main():
         max_open_minutes=settings.get("max_open_minutes", 20),
         adx_threshold=settings.get("adx_threshold", 25.0),
         rsi_threshold=settings.get("rsi_threshold", 68.0),
+        # Nuevos parámetros para la estrategia avanzada
+        atr_multiplier=settings.get("atr_multiplier", 1.5),
+        volume_multiplier=settings.get("volume_multiplier", 1.2),
         logger=logger,
+        trade_logger=trade_logger,
     )
     
     logger.info("🚀 Estrategia iniciada. Presiona Ctrl+C para detener.")

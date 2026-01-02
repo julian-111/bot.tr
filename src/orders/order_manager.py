@@ -21,6 +21,15 @@ class OrderManager:
             self.logger.error(f"No se pudo obtener el valor mínimo de la orden: {e}")
             return 0.0
 
+    def get_balance(self, coin: str) -> float:
+        """Devuelve el balance disponible para una moneda específica."""
+        try:
+            balances = self.client.get_wallet_balance(coins=[coin])
+            return balances.get(coin, 0.0)
+        except Exception as e:
+            self.logger.error(f"No se pudo obtener el balance para {coin}: {e}")
+            return 0.0
+
     def market_buy(self, qty: str, order_link_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Recibe cantidad en BASE asset (BTC).
