@@ -1,7 +1,7 @@
 import threading
 import time
 import sys
-from typing import Optional, Callable
+from typing import Optional, Callable, Dict
 from pybit.unified_trading import WebSocket
 from src.logger import setup_logger
 from src.exchange.bybit_client import BybitClient
