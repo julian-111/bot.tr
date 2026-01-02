@@ -97,7 +97,8 @@ class OrderManager:
 
             self.logger.info(f"Enviando Market Buy: {qty_str} USDT (Quote Amt)")
 
-            return self.client.place_order(
+            # --- INICIO: Lógica de reintentos ---
+            order_response = self.client.place_order(
                 symbol=self.symbol,
                 side="Buy",
                 order_type="Market",
@@ -105,6 +106,41 @@ class OrderManager:
                 category=self.category,
                 order_link_id=order_link_id,
             )
+
+            # Si la orden fue rechazada de inmediato, no hay nada que reintentar.
+            if not order_response or order_response.get("retCode", 0) != 0:
+                return order_response
+
+            order_id = order_response.get("result", {}).get("orderId")
+            if not order_id:
+                self.logger.warning("La respuesta de la orden no contenía un OrderID.")
+                return order_response
+
+            # Reintentar obtener los detalles de la ejecución
+            max_retries = 5
+            retry_delay_ms = 200
+            for i in range(max_retries):
+                time.sleep(retry_delay_ms / 1000)
+                try:
+                    executions = self.client.get_executions(symbol=self.symbol, category=self.category, orderId=order_id)
+                    if isinstance(executions, dict) and executions.get("result", {}).get("list"):
+                        # ¡Éxito! Se encontraron las ejecuciones. Devolvemos la respuesta original de la orden.
+                        self.logger.info(f"Ejecuciones encontradas para OrderID {order_id} en el intento {i+1}.")
+                        return order_response
+                except Exception as e:
+                    self.logger.error(f"Error al obtener ejecuciones en el intento {i+1}: {e}")
+                
+                self.logger.warning(f"No se encontraron ejecuciones para OrderID {order_id} en el intento {i+1}/{max_retries}. Reintentando...")
+
+            # Si después de todos los reintentos no hay ejecuciones, se considera un fallo.
+            self.logger.error(f"Fallo definitivo: No se encontraron ejecuciones para OrderID {order_id} después de {max_retries} reintentos.")
+            # Devolvemos una respuesta de error consistente con la API de Bybit
+            return {
+                "retCode": 17014, # Código de error inventado para "Execution not found"
+                "retMsg": f"Execution not found for orderId {order_id} after {max_retries} retries.",
+                "result": {}
+            }
+            # --- FIN: Lógica de reintentos ---
             
         except Exception as e:
             self.logger.error(f"Error en market_buy_usdt: {e}")

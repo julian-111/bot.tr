@@ -46,11 +46,12 @@ def main():
         streamer=streamer,
         order_manager=order_manager,
         symbol=settings["symbol"],
-        risk_usdt=settings.get("risk_per_trade_usdt", 10.0),
+        risk_usdt=settings.get("risk_per_trade_usdt", 5.0),
         tp_pct=settings.get("tp_pct", 0.003),
         sl_pct=settings.get("sl_pct", 0.005),
         max_open_minutes=settings.get("max_open_minutes", 20),
         adx_threshold=settings.get("adx_threshold", 25.0),
+        rsi_threshold=settings.get("rsi_threshold", 68.0),
         logger=logger,
     )
     

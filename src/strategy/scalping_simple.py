@@ -6,7 +6,7 @@ from src.logger import setup_logger
 
 
 class ScalpingStrategy:
-    def __init__(self, streamer, order_manager, symbol: str, risk_usdt: float = 10.0, tp_pct: float = 0.003, sl_pct: float = 0.005, max_open_minutes: int = 20, adx_threshold: float = 25.0, logger=None):
+    def __init__(self, streamer, order_manager, symbol: str, risk_usdt: float = 10.0, tp_pct: float = 0.003, sl_pct: float = 0.005, max_open_minutes: int = 20, adx_threshold: float = 25.0, rsi_threshold: float = 68.0, logger=None):
         self.streamer = streamer
         self.md = streamer
         self.om = order_manager
@@ -16,6 +16,7 @@ class ScalpingStrategy:
         self.sl_pct = float(sl_pct)
         self.max_open_secs = int(max_open_minutes) * 60
         self.adx_threshold = float(adx_threshold)
+        self.rsi_threshold = float(rsi_threshold)
         self.logger = logger if logger is not None else setup_logger("ScalpingStrategy")
         
         # Calcular y loguear Ratio Riesgo:Beneficio
@@ -25,6 +26,7 @@ class ScalpingStrategy:
         self.logger.info(f"   • Beneficio (TP): {self.tp_pct*100:.2f}%")
         self.logger.info(f"   • Ratio R:R: 1:{rr_ratio:.1f} (Objetivo: 1:2)")
         self.logger.info(f"   • Filtro ADX: > {self.adx_threshold}")
+        self.logger.info(f"   • Filtro RSI: < {self.rsi_threshold}")
 
         # Obtener y guardar el valor mínimo de la orden
         self._min_order_value = self.om.get_min_order_value()
@@ -52,7 +54,10 @@ class ScalpingStrategy:
         df.ta.ema(length=21, append=True)
 
         # Calcular ADX
-        df.ta.adx(length=14, append=True) # ADX usa 14 periodos por defecto
+        df.ta.adx(length=14, append=True)
+
+        # Calcular RSI
+        df.ta.rsi(length=14, append=True)
 
         return df.iloc[-1] # Devolver la última fila con los indicadores más recientes
 
@@ -63,20 +68,31 @@ class ScalpingStrategy:
         ema9 = indicators.get('EMA_9')
         ema21 = indicators.get('EMA_21')
         adx = indicators.get('ADX_14')
+        rsi = indicators.get('RSI_14')
 
-        if ema9 is None or ema21 is None or adx is None:
+        if ema9 is None or ema21 is None or adx is None or rsi is None:
             return False, ""
 
-        # Condición de Cruce de Medias
+        # 1. Condición de Cruce de Medias (Señal de Dirección)
         buy_signal = ema9 > ema21
 
-        # Condición de Fortaleza de Tendencia
+        # 2. Condición de Fortaleza de Tendencia (Filtro de Ruido)
         is_trending = adx > self.adx_threshold
 
+        # 3. Condición de Momentum (Filtro de Sobrecrompra)
+        is_not_overbought = rsi < self.rsi_threshold
+
+        # Lógica de decisión y logging
+        if buy_signal and is_trending:
+            if is_not_overbought:
+                return True, "ok"
+            else:
+                return False, "rsi_overbought" # Nueva razón de rechazo
+        
         if buy_signal and not is_trending:
             return False, "lateral"
         
-        return buy_signal and is_trending, "ok"
+        return False, ""
 
     def _should_close(self, price: float) -> Optional[str]:
         if not self._in_trade:
@@ -149,6 +165,10 @@ class ScalpingStrategy:
             elif reason == "lateral":
                 adx_value = indicators.get('ADX_14', 0)
                 self.logger.debug(f"Mercado lateral detectado (ADX: {adx_value:.2f}). Esperando más volatilidad para operar.")
+            
+            elif reason == "rsi_overbought":
+                rsi_value = indicators.get('RSI_14', 0)
+                self.logger.debug(f"Compra rechazada por sobrecompra (RSI: {rsi_value:.2f} >= {self.rsi_threshold}). Evitando entrada de alto riesgo.")
 
             # Decisión de Cierre
             close_reason = self._should_close(float(price))
