@@ -46,6 +46,7 @@ class MarketDataStreamer:
         self._debug_messages = 0
         self._last_tick_ts: float = 0.0
         self._watchdog_thread: Optional[threading.Thread] = None
+        self._is_polling_down: bool = False # Flag para controlar logs de polling
 
     def start(self, on_kline: Optional[Callable[[Dict], None]] = None):
         if getattr(self.client, "is_demo", False):
@@ -138,6 +139,11 @@ class MarketDataStreamer:
             try:
                 klines = self.client.get_klines(symbol=self.symbol, category=self.category, interval=1, limit=2)
                 if klines and klines['list']:
+                    # Si tuvimos éxito, y antes estábamos en estado de error, notificar recuperación
+                    if self._is_polling_down:
+                        self.logger.info("Conexión de respaldo (REST Polling) recuperada.")
+                        self._is_polling_down = False
+
                     latest_kline_raw = klines['list'][0]
                     kline_ts = int(latest_kline_raw[0])
                     
@@ -157,7 +163,10 @@ class MarketDataStreamer:
                         if on_kline:
                             on_kline(kline)
             except Exception as e:
-                self.logger.error(f"Error en REST polling de klines: {e}")
+                # Solo mostrar el error si es la primera vez que ocurre
+                if not self._is_polling_down:
+                    self.logger.error(f"Se perdió la conexión de respaldo (REST Polling): {e}")
+                    self._is_polling_down = True
             
             time.sleep(30) # Polling cada 30 segundos, ya que las velas son de 1 min
 
