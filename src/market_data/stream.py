@@ -46,7 +46,27 @@ class MarketDataStreamer:
         self._debug_messages = 0
         self._last_tick_ts: float = 0.0
         self._watchdog_thread: Optional[threading.Thread] = None
-        self._is_polling_down: bool = False # Flag para controlar logs de polling
+
+        # Banderas de estado para la conexión
+        self._is_websocket_connected: bool = False
+        self._is_polling_down: bool = False
+
+    def on_open(self, ws):
+        self.logger.info("Conexión WebSocket abierta.")
+        self._is_websocket_connected = True
+        self.subscribe(ws)
+
+    def on_close(self, ws, close_status_code, close_msg):
+        if self._is_websocket_connected:
+            self.logger.warning(f"Conexión WebSocket cerrada. Código: {close_status_code}, Mensaje: {close_msg}")
+            self._is_websocket_connected = False
+
+    def on_error(self, ws, error):
+        if "Connection is already closed" in str(error):
+            return
+        if self._is_websocket_connected:
+            self.logger.error(f"Error en WebSocket: {error}")
+            self._is_websocket_connected = False
 
     def start(self, on_kline: Optional[Callable[[Dict], None]] = None):
         if getattr(self.client, "is_demo", False):
@@ -61,7 +81,10 @@ class MarketDataStreamer:
                 channel_type="spot",
                 ping_interval=30,
                 ping_timeout=10,
-                restart_on_error=True
+                restart_on_error=True,
+                on_open=self.on_open,
+                on_close=self.on_close,
+                on_error=self.on_error
             )
             
             def cb(msg):
@@ -139,7 +162,6 @@ class MarketDataStreamer:
             try:
                 klines = self.client.get_klines(symbol=self.symbol, category=self.category, interval=1, limit=2)
                 if klines and klines['list']:
-                    # Si tuvimos éxito, y antes estábamos en estado de error, notificar recuperación
                     if self._is_polling_down:
                         self.logger.info("Conexión de respaldo (REST Polling) recuperada.")
                         self._is_polling_down = False
@@ -147,7 +169,6 @@ class MarketDataStreamer:
                     latest_kline_raw = klines['list'][0]
                     kline_ts = int(latest_kline_raw[0])
                     
-                    # Si es una vela nueva, procesarla
                     if kline_ts > last_kline_ts:
                         last_kline_ts = kline_ts
                         kline = {
@@ -163,12 +184,11 @@ class MarketDataStreamer:
                         if on_kline:
                             on_kline(kline)
             except Exception as e:
-                # Solo mostrar el error si es la primera vez que ocurre
                 if not self._is_polling_down:
                     self.logger.error(f"Se perdió la conexión de respaldo (REST Polling): {e}")
                     self._is_polling_down = True
             
-            time.sleep(30) # Polling cada 30 segundos, ya que las velas son de 1 min
+            time.sleep(30)
 
     def stop(self):
         self._stop.set()
