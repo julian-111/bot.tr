@@ -20,48 +20,33 @@ class TradeLogger:
                 with open(self._file_path, 'w', newline='') as f:
                     writer = csv.writer(f)
                     writer.writerow([
-                        "timestamp_utc",
-                        "symbol",
-                        "side",
-                        "reason",
-                        "price",
-                        "quantity",
-                        "investment_usdt",
-                        "pnl_usdt",
-                        "final_balance_usdt"
+                        "fecha",
+                        "hora",
+                        "cantidad de inversion",
+                        "ganancia o perdida",
+                        "balance actual"
                     ])
 
     def log_trade(self, symbol: str, side: str, reason: str, price: float, quantity: float, investment: float, pnl: float, final_balance: float):
         """
-        Registra una operación en el archivo CSV.
-
-        Args:
-            symbol (str): Símbolo del activo (ej. "BTCUSDT").
-            side (str): "BUY" o "SELL".
-            reason (str): Razón del cierre (ej. "TP", "SL", "TIMEOUT").
-            price (float): Precio de ejecución.
-            quantity (float): Cantidad de activo.
-            investment (float): Monto total de la inversión en USDT.
-            pnl (float): Ganancia o pérdida de la operación en USDT.
-            final_balance (float): Balance total de la cuenta después de la operación.
+        Registra una operación en el archivo CSV con el formato solicitado.
         """
         with self._lock:
             try:
+                now = datetime.utcnow()
+                fecha = now.strftime('%Y-%m-%d')
+                hora = now.strftime('%H:%M:%S')
+                
                 with open(self._file_path, 'a', newline='') as f:
                     writer = csv.writer(f)
                     writer.writerow([
-                        datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
-                        symbol,
-                        side.upper(),
-                        reason.upper(),
-                        f"{price:.4f}",
-                        f"{quantity:.8f}",
+                        fecha,
+                        hora,
                         f"{investment:.2f}",
                         f"{pnl:.2f}",
                         f"{final_balance:.2f}"
                     ])
             except IOError as e:
-                # Manejar errores de escritura si es necesario
                 print(f"Error al escribir en el log de trades: {e}")
 
 # Ejemplo de uso (esto no se ejecutará directamente)

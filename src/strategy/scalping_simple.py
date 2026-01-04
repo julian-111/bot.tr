@@ -50,6 +50,7 @@ class ScalpingStrategy:
         self._opened_at = 0.0
         self._last_fail_time = 0.0
         self._stop_loss_price = 0.0
+        self._trade_closed = False
 
     def _calculate_indicators(self, df):
         if len(df) < 25:
@@ -138,6 +139,7 @@ class ScalpingStrategy:
                 self._stop_loss_price = lp - (atr_value * self.atr_multiplier)
 
                 self._qty, self._entry, self._opened_at, self._in_trade = qty, lp, time.time(), True
+                self._trade_closed = False
                 
                 self.logger.info("="*42)
                 self.logger.info(f"🚀 COMPRA EJECUTADA | ${lp:,.2f} | Cant: {qty}")
@@ -155,7 +157,7 @@ class ScalpingStrategy:
                     self.logger.info(f"Compra rechazada: {log_messages[reason]}.")
 
             close_reason = self._should_close(price)
-            if close_reason:
+            if close_reason and not self._trade_closed:
                 self.om.market_sell(f"{self._qty:.8f}")
                 
                 pnl = (price - self._entry) * self._qty
@@ -177,6 +179,7 @@ class ScalpingStrategy:
                         self.logger.error(f"Error al registrar trade: {e}")
 
                 self._in_trade, self._qty, self._entry, self._opened_at, self._stop_loss_price = False, 0.0, 0.0, 0.0, 0.0
+                self._trade_closed = True
         except Exception as e:
             self.logger.error(f"on_kline error: {e}", exc_info=True)
 
